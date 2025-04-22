@@ -1,0 +1,181 @@
+# Laravel 11 + Vue 3 + Inertia.js + Element Plus + MariaDB 10+ 完整開發環境配置
+image: gitpod/workspace-full
+
+# 定義要暴露的連接埠
+ports:
+  # Laravel 服務
+  - port: 8000
+    onOpen: open-preview
+    visibility: public
+    name: Laravel App
+    description: Laravel 應用程式服務
+  # Vite 開發服務
+  - port: 5173
+    onOpen: open-browser
+    visibility: public
+    name: Vite Dev Server
+    description: 前端開發伺服器
+  # MariaDB 服務
+  - port: 3306
+    onOpen: ignore
+    visibility: private
+    name: MariaDB
+    description: MariaDB 資料庫服務
+  # Adminer 服務
+  - port: 8080
+    onOpen: open-browser
+    visibility: public
+    name: Adminer
+    description: 資料庫管理介面
+
+# 啟動任務
+tasks:
+  # 安裝 PHP 8.2
+  - name: PHP Setup
+    init: |
+      # 添加 PHP 8.2 PPA
+      sudo add-apt-repository -y ppa:ondrej/php
+      sudo apt-get update
+      # 安裝 PHP 8.2 及相關擴展
+      sudo apt-get install -y php8.2 php8.2-cli php8.2-common php8.2-curl php8.2-mbstring php8.2-mysql php8.2-xml php8.2-zip php8.2-bcmath php8.2-gd php8.2-intl php8.2-sqlite3
+      # 設置 PHP 8.2 為默認版本
+      sudo update-alternatives --set php /usr/bin/php8.2
+      # 設置 PHP 時區
+      sudo sed -i 's/;date.timezone =/date.timezone = Asia\/Taipei/g' /etc/php/8.2/cli/php.ini
+      # 驗證 PHP 版本
+      php -v
+      # 建立 PHP 設置完成標記
+      gp sync-done php-setup
+
+  # 啟動 MariaDB 服務
+  - name: MariaDB Server
+    init: |
+      # 等待 PHP 設置完成
+      gp sync-await php-setup
+      # 安裝 MariaDB 10+
+      sudo apt-get update
+      sudo apt-get install -y mariadb-server
+      # 啟動 MariaDB 服務
+      sudo service mariadb start
+      # 設置 MariaDB 根密碼和安全設定
+      sudo mysql -e "CREATE USER IF NOT EXISTS 'gitpod'@'%' IDENTIFIED BY 'gitpod';"
+      sudo mysql -e "GRANT ALL PRIVILEGES ON *.* TO 'gitpod'@'%' WITH GRANT OPTION;"
+      sudo mysql -e "CREATE DATABASE IF NOT EXISTS laravel;"
+      sudo mysql -e "FLUSH PRIVILEGES;"
+      # 設置 MariaDB 允許遠程連接
+      sudo sed -i 's/bind-address\s*=\s*127.0.0.1/bind-address = 0.0.0.0/' /etc/mysql/mariadb.conf.d/50-server.cnf
+      # 設置 MariaDB 時區
+      sudo mysql -e "SET GLOBAL time_zone = '+08:00';"
+      sudo mysql -e "SET time_zone = '+08:00';"
+      # 重啟 MariaDB 服務
+      sudo service mariadb restart
+      # 下載並設置 Adminer
+      mkdir -p /workspace/adminer
+      wget -O /workspace/adminer/index.php https://github.com/vrana/adminer/releases/download/v4.8.1/adminer-4.8.1.php
+      # 建立 MariaDB 設置完成標記
+      gp sync-done mariadb-setup
+    command: |
+      # 啟動 Adminer
+      cd /workspace/adminer && php -S 0.0.0.0:8080
+
+  # Laravel 設置與啟動
+  - name: Laravel Server
+    init: |
+      # 等待 MariaDB 設置完成
+      gp sync-await mariadb-setup
+      # 安裝最新版 Composer
+      php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+      php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+      php -r "unlink('composer-setup.php');"
+
+      # 檢查是否已有 Laravel 專案
+      if [ ! -f "composer.json" ]; then
+        # 如果沒有現有專案，使用 Composer 創建新的 Laravel 11 專案
+        composer create-project laravel/laravel=^11.0 . --prefer-dist
+        # 設置時區
+        sed -i "s/'timezone' => 'UTC'/'timezone' => 'Asia\/Taipei'/g" config/app.php
+      else
+        # 如果已有專案，直接安裝依賴
+        composer install
+      fi
+
+      # 環境設置
+      cp -n .env.example .env
+      # 修改 .env 文件以連接到 MariaDB
+      sed -i 's/DB_CONNECTION=mysql/DB_CONNECTION=mysql/' .env
+      sed -i 's/DB_HOST=127.0.0.1/DB_HOST=127.0.0.1/' .env
+      sed -i 's/DB_PORT=3306/DB_PORT=3306/' .env
+      sed -i 's/DB_DATABASE=laravel/DB_DATABASE=laravel/' .env
+      sed -i 's/DB_USERNAME=root/DB_USERNAME=gitpod/' .env
+      sed -i 's/DB_PASSWORD=/DB_PASSWORD=gitpod/' .env
+      # 生成應用金鑰
+      php artisan key:generate
+      # 執行資料庫遷移
+      php artisan migrate:fresh --seed
+
+      # 安裝 Laravel Breeze 提供 Inertia + Vue 3 腳手架
+      composer require laravel/breeze --dev
+      php artisan breeze:install vue
+
+      # 安裝 Element Plus
+      npm install element-plus @element-plus/icons-vue
+
+      # 安裝 Node.js 依賴
+      npm install
+
+      # 建立初始化完成標記
+      gp sync-done laravel-setup
+    command: |
+      # 啟動 Laravel 服務器
+      php artisan serve --host=0.0.0.0
+
+  # Vite 開發服務器
+  - name: Vite Dev Server
+    init: |
+      # 等待 Laravel 設置完成
+      gp sync-await laravel-setup
+    command: |
+      # 啟動 Vite 開發服務器
+      npm run dev
+
+# GitHub 相關設置
+github:
+  prebuilds:
+    # 自動為主分支建立預構建
+    master: true
+    # 自動為所有分支建立預構建
+    branches: true
+    # 自動為 PR 建立預構建
+    pullRequests: true
+    # 為 PR 添加評論
+    addComment: true
+    # 為 PR 添加檢查
+    addCheck: true
+
+# VS Code 擴充功能
+vscode:
+  extensions:
+    # Vue 相關
+    - Vue.volar
+    - Vue.vscode-typescript-vue-plugin
+    # PHP 相關
+    - bmewburn.vscode-intelephense-client
+    - MehediDracula.php-namespace-resolver
+    - onecentlin.laravel-blade
+    - DEVSENSE.phptools-vscode
+    # CSS/UI 相關
+    - bradlc.vscode-tailwindcss
+    - antfu.iconify
+    # 工具類
+    - mikestead.dotenv
+    - EditorConfig.EditorConfig
+    - dbaeumer.vscode-eslint
+    - esbenp.prettier-vscode
+    - formulahendry.auto-close-tag
+    - formulahendry.auto-rename-tag
+    # 資料庫相關
+    - cweijan.vscode-mysql-client2
+
+# 工作區設置
+workspaceLocation: "."
+checkoutLocation: "."
