@@ -138,26 +138,11 @@ tasks:
       # 啟動 Vite 開發服務器
       npm run dev
 
-# GitHub 相關設置
-github:
-  prebuilds:
-    # 自動為主分支建立預構建
-    master: true
-    # 自動為所有分支建立預構建
-    branches: true
-    # 自動為 PR 建立預構建
-    pullRequests: true
-    # 為 PR 添加評論
-    addComment: true
-    # 為 PR 添加檢查
-    addCheck: true
-
 # VS Code 擴充功能
 vscode:
   extensions:
     # Vue 相關
     - Vue.volar
-    - Vue.vscode-typescript-vue-plugin
     # PHP 相關
     - bmewburn.vscode-intelephense-client
     - MehediDracula.php-namespace-resolver
